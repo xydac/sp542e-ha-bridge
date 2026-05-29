@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LaunchAgent (NOT a LaunchDaemon) so it runs in the GUI/Aqua session and can
+  hold the Bluetooth TCC permission.
+
+  Install:
+    cp com.xydac.sp542e-bridge.plist ~/Library/LaunchAgents/
+    # edit the two paths below to your absolute checkout path first!
+    launchctl load -w ~/Library/LaunchAgents/com.xydac.sp542e-bridge.plist
+
+  IMPORTANT: run `./run.sh probe` once from a local Terminal FIRST so macOS
+  grants Bluetooth access to the venv python binary. A background launchd job
+  cannot display the permission prompt.
+
+  Logs: sp542e/bridge.out.log / bridge.err.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.xydac.sp542e-bridge</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/ABSOLUTE/PATH/TO/sp542e-ha-bridge/run.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/ABSOLUTE/PATH/TO/sp542e-ha-bridge</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/ABSOLUTE/PATH/TO/sp542e-ha-bridge/bridge.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/ABSOLUTE/PATH/TO/sp542e-ha-bridge/bridge.err.log</string>
+</dict>
+</plist>
