@@ -16,7 +16,7 @@ the VirtualBox VM having no usable Bluetooth.
 
 | File | Purpose |
 |---|---|
-| `protocol.py` | LED-BLE `7E..EF` frame builders (power/RGB/brightness). Single source of truth. |
+| `protocol.py` | BanlanX_6xx (`53 ..`) frame builders (power/CCT/brightness). Single source of truth. |
 | `probe.py`    | One-shot: drives the strip directly to confirm the protocol. |
 | `bridge.py`   | The service: MQTT light ↔ BLE. |
 | `run.sh`      | Bootstraps `.venv` (via `uv`), loads `.env`, runs bridge or probe. |
@@ -33,7 +33,7 @@ Mac. First run will prompt to grant Bluetooth to the Python binary
 ## Setup
 
 ```bash
-cd sp542e
+cd sp542e-ha-bridge
 cp .env.example .env          # then fill in MQTT_USER / MQTT_PASS
 
 # 1. Confirm the protocol actually drives the light (watch the strip):
@@ -48,24 +48,32 @@ cp com.xydac.sp542e-bridge.plist ~/Library/LaunchAgents/
 launchctl load -w ~/Library/LaunchAgents/com.xydac.sp542e-bridge.plist
 ```
 
-## Protocol (FFE1, plaintext, 9-byte frames)
+## Protocol (BanlanX_6xx, plaintext, over FFE0/FFE1)
 
 This is a **CCT (tunable-white)** strip — HA exposes color-temp + brightness +
-on/off, no RGB.
+on/off, no RGB. The controller speaks the **BanlanX_6xx** family (SP630E-style),
+*not* the LED-BLE `7E..EF` protocol and *not* idealLED AES (both were tried and
+silently ignored). It advertises manufacturer id `0x5053` with advert data
+`5d 10..` (model id `0x5d`).
 
-| Command | Bytes | Status |
-|---|---|---|
-| Power ON  | `7e ff 04 01 ff ff ff ff ef` | confirmed format |
-| Power OFF | `7e ff 04 00 ff ff ff ff ef` | confirmed format |
-| Brightness 0–100 | `7e ff 01 VV 00 ff ff ff ef` | confirmed format |
-| Color temp | one of 3 candidates (see below) | **probe to confirm** |
+Frames are plaintext on write characteristic **FFE1** (service FFE0), shaped
+`53 <cmd> 00 01 00 <len> <payload>`. **Writes must be acknowledged**
+(`response=True`) or the device ignores them — this was the key gotcha.
 
-The CCT byte format isn't reliably documented, so `probe.py` tries 3 candidate
-formats and you report which GROUP shifts warm↔cool. Then point `cct` in
-`protocol.py` at the winner (`cct_rgbslot` / `cct_sub02` / `cct_sub05`). Both
-probe and bridge read from `protocol.py`, so it's a one-line change.
+| Command | Bytes |
+|---|---|
+| Power ON / OFF | `53 50 00 01 00 01 01` / `53 50 00 01 00 01 00` |
+| Static-white mode | `53 53 00 01 00 02 02 01` (set before CCT/white-brightness) |
+| Color temp (static) | `53 61 00 01 00 02 <cold> <warm>` (`<cold>`/`<warm>` 0–255; `0x60` = dynamic) |
+| Brightness | `53 51 00 01 00 02 <which> <level>` (`<which>` 0=color 1=white; `<level>` 0–255) |
+| State query | `53 02 00 01 00 01 01` → device replies multi-packet status (fw, IP, name) |
 
-color_temp is in **mireds**: `MAX_MIREDS`=370 (~2700K warm), `MIN_MIREDS`=153 (~6500K cool).
+`color_temp` is in **mireds**: `MAX_MIREDS`=370 (~2700K warm), `MIN_MIREDS`=153
+(~6500K cool); `protocol.py:cct()` maps mireds → cold/warm bytes.
+
+Protocol reference: [`monty68/uniled`](https://github.com/monty68/uniled)
+`custom_components/uniled/lib/ble/banlanx_6xx.py` (the SP542E isn't in UniLED's
+model list, but it's this family).
 
 ## Caveats
 
